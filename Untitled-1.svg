@@ -1,0 +1,212 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 600" width="100%" height="100%">
+  <!-- 定义全局样式与标记 -->
+  <defs>
+    <!-- 实线箭头 -->
+    <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4a5568" />
+    </marker>
+    <!-- 虚线箭头 -->
+    <marker id="arrow-dashed" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#718096" />
+    </marker>
+    <!-- 卡片阴影 -->
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.08" />
+    </filter>
+  </defs>
+
+  <!-- 画布背景 -->
+  <rect width="1000" height="600" fill="#f8fafc" rx="12" stroke="#e2e8f0" stroke-width="1" />
+
+  <!-- 标题区域 -->
+  <g transform="translate(50, 45)">
+    <text font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold" fill="#1e293b">WindowViewer 类函数调用与协作关系图</text>
+    <text font-family="system-ui, -apple-system, sans-serif" font-size="12" fill="#64748b" y="22">展示了构造初始化、主消息循环、WGC 异步捕获及线程安全纹理传递的完整生命周期</text>
+  </g>
+
+  <!-- ==================== 连线关系 ==================== -->
+  
+  <!-- 1. 构造函数 触发 WndProc -->
+  <path d="M 170 150 L 170 220" stroke="#64748b" stroke-width="1.5" stroke-dasharray="4" marker-end="url(#arrow-dashed)" />
+  <text x="175" y="190" font-family="system-ui" font-size="10" fill="#64748b">OS 创建窗口触发</text>
+
+  <!-- 2. WndProc 路由到 OnResize -->
+  <path d="M 170 270 L 170 340" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)" />
+  <text x="175" y="310" font-family="system-ui" font-size="10" fill="#475569">处理 WM_SIZE</text>
+
+  <!-- 3. OnResize 触发 UpdateRenderTarget -->
+  <path d="M 240 365 L 285 365" stroke="#0f766e" stroke-width="1.5" marker-end="url(#arrow)" />
+
+  <!-- 4. InitGraphics 触发 UpdateRenderTarget -->
+  <path d="M 375 270 L 375 340" stroke="#0f766e" stroke-width="1.5" marker-end="url(#arrow)" />
+
+  <!-- 5. Start 控制流连线 (使用贝塞尔曲线使布局平滑) -->
+  <!-- 步骤 1: InitGraphics -->
+  <path d="M 590 150 C 590 190, 375 180, 375 220" stroke="#0284c7" stroke-width="1.5" marker-end="url(#arrow)" />
+  <!-- 步骤 2: InitImGui -->
+  <path d="M 590 150 C 590 190, 535 180, 535 220" stroke="#0284c7" stroke-width="1.5" marker-end="url(#arrow)" />
+  <!-- 步骤 3: StartCapture -->
+  <path d="M 590 150 C 590 190, 690 180, 690 220" stroke="#0284c7" stroke-width="1.5" marker-end="url(#arrow)" />
+  <!-- 步骤 4: RenderFrame (Loop) -->
+  <path d="M 590 150 C 590 190, 855 180, 855 220" stroke="#0284c7" stroke-width="1.5" marker-end="url(#arrow)" />
+
+  <!-- 6. StartCapture 注册 OnFrameArrived 回调 -->
+  <path d="M 690 270 C 690 300, 580 300, 580 340" stroke="#8b5cf6" stroke-width="1.5" stroke-dasharray="3" marker-end="url(#arrow-dashed)" />
+  <text x="650" y="305" font-family="system-ui" font-size="10" fill="#6d28d9" text-anchor="middle">注册 WinRT 回调</text>
+
+  <!-- 7. OnFrameArrived 后台线程向共享变量写入纹理 -->
+  <path d="M 660 365 L 740 365" stroke="#ca8a04" stroke-width="2" marker-end="url(#arrow)" />
+  <text x="700" y="355" font-family="system-ui" font-size="10" font-weight="bold" fill="#854d0e" text-anchor="middle">写入 (加锁)</text>
+
+  <!-- 8. RenderFrame 主线程安全读取纹理并创建 SRV -->
+  <path d="M 835 340 L 855 270" stroke="#ea580c" stroke-width="2" marker-end="url(#arrow)" />
+  <text x="880" y="310" font-family="system-ui" font-size="10" font-weight="bold" fill="#9a3412" text-anchor="middle">读取 &amp; 转换</text>
+
+  <!-- 9. 退出循环流 (退出 PeekMessage 后执行清理) -->
+  <path d="M 855 270 L 950 270 L 950 430 L 730 430 L 730 460" stroke="#475569" stroke-width="1.5" stroke-dasharray="4" marker-end="url(#arrow-dashed)" />
+  <path d="M 950 430 L 570 430 L 570 460" stroke="#475569" stroke-width="1.5" stroke-dasharray="4" marker-end="url(#arrow-dashed)" />
+  <text x="955" y="350" font-family="system-ui" font-size="11" fill="#475569" writing-mode="vertical-rl">退出循环 (WM_QUIT)</text>
+
+  <!-- ==================== 节点绘制 ==================== -->
+
+  <!-- [1] Constructor -->
+  <g transform="translate(80, 100)" filter="url(#shadow)">
+    <rect width="180" height="50" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.5" rx="6" />
+    <text x="90" y="22" font-family="system-ui" font-size="13" font-weight="bold" fill="#0369a1" text-anchor="middle">WindowViewer()</text>
+    <text x="90" y="38" font-family="system-ui" font-size="10" fill="#0284c7" text-anchor="middle">构造函数 (注册/创建窗口)</text>
+  </g>
+
+  <!-- [2] Start() -->
+  <g transform="translate(500, 100)" filter="url(#shadow)">
+    <rect width="180" height="50" fill="#e0f2fe" stroke="#0284c7" stroke-width="2" rx="6" />
+    <text x="90" y="22" font-family="system-ui" font-size="13" font-weight="bold" fill="#0369a1" text-anchor="middle">Start()</text>
+    <text x="90" y="38" font-family="system-ui" font-size="10" fill="#0284c7" text-anchor="middle">控制入口 &amp; 消息循环</text>
+  </g>
+
+  <!-- [3] WndProc -->
+  <g transform="translate(80, 220)" filter="url(#shadow)">
+    <rect width="180" height="50" fill="#f1f5f9" stroke="#64748b" stroke-width="1.5" rx="6" />
+    <text x="90" y="22" font-family="system-ui" font-size="13" font-weight="bold" fill="#334155" text-anchor="middle">WndProc() [Static]</text>
+    <text x="90" y="38" font-family="system-ui" font-size="10" fill="#64748b" text-anchor="middle">Win32 窗口消息全局路由</text>
+  </g>
+
+  <!-- [4] InitGraphics -->
+  <g transform="translate(300, 220)" filter="url(#shadow)">
+    <rect width="150" height="50" fill="#ccfbf1" stroke="#0d9488" stroke-width="1.5" rx="6" />
+    <text x="75" y="22" font-family="system-ui" font-size="13" font-weight="bold" fill="#0f766e" text-anchor="middle">InitGraphics()</text>
+    <text x="75" y="38" font-family="system-ui" font-size="10" fill="#0d9488" text-anchor="middle">设备创建 &amp; 交换链配置</text>
+  </g>
+
+  <!-- [5] InitImGui -->
+  <g transform="translate(470, 220)" filter="url(#shadow)">
+    <rect width="130" height="50" fill="#fae8ff" stroke="#d946ef" stroke-width="1.5" rx="6" />
+    <text x="65" y="22" font-family="system-ui" font-size="13" font-weight="bold" fill="#86198f" text-anchor="middle">InitImGui()</text>
+    <text x="65" y="38" font-family="system-ui" font-size="10" fill="#d946ef" text-anchor="middle">初始化 GUI 环境</text>
+  </g>
+
+  <!-- [6] StartCapture -->
+  <g transform="translate(620, 220)" filter="url(#shadow)">
+    <rect width="140" height="50" fill="#f3e8ff" stroke="#8b5cf6" stroke-width="1.5" rx="6" />
+    <text x="70" y="22" font-family="system-ui" font-size="13" font-weight="bold" fill="#6d28d9" text-anchor="middle">StartCapture()</text>
+    <text x="70" y="38" font-family="system-ui" font-size="10" fill="#8b5cf6" text-anchor="middle">创建 WinRT 捕获池</text>
+  </g>
+
+  <!-- [7] RenderFrame -->
+  <g transform="translate(780, 220)" filter="url(#shadow)">
+    <rect width="150" height="50" fill="#ffedd5" stroke="#f97316" stroke-width="2" rx="6" />
+    <text x="75" y="22" font-family="system-ui" font-size="13" font-weight="bold" fill="#9a3412" text-anchor="middle">RenderFrame()</text>
+    <text x="75" y="38" font-family="system-ui" font-size="10" fill="#f97316" text-anchor="middle">UI 自适应渲染 (主线程)</text>
+  </g>
+
+  <!-- [8] OnResize -->
+  <g transform="translate(100, 340)" filter="url(#shadow)">
+    <rect width="140" height="50" fill="#f1f5f9" stroke="#64748b" stroke-width="1.5" rx="6" />
+    <text x="70" y="22" font-family="system-ui" font-size="13" font-weight="bold" fill="#334155" text-anchor="middle">OnResize()</text>
+    <text x="70" y="38" font-family="system-ui" font-size="10" fill="#64748b" text-anchor="middle">窗口缩放响应</text>
+  </g>
+
+  <!-- [9] UpdateRenderTarget -->
+  <g transform="translate(285, 340)" filter="url(#shadow)">
+    <rect width="180" height="50" fill="#ccfbf1" stroke="#0d9488" stroke-width="1.5" rx="6" />
+    <text x="90" y="22" font-family="system-ui" font-size="13" font-weight="bold" fill="#0f766e" text-anchor="middle">UpdateRenderTarget()</text>
+    <text x="90" y="38" font-family="system-ui" font-size="10" fill="#0d9488" text-anchor="middle">安全重建 RTV 资源</text>
+  </g>
+
+  <!-- [10] OnFrameArrived -->
+  <g transform="translate(500, 340)" filter="url(#shadow)">
+    <rect width="160" height="50" fill="#f3e8ff" stroke="#8b5cf6" stroke-width="1.5" rx="6" />
+    <text x="80" y="22" font-family="system-ui" font-size="13" font-weight="bold" fill="#6d28d9" text-anchor="middle">OnFrameArrived()</text>
+    <text x="80" y="38" font-family="system-ui" font-size="10" fill="#8b5cf6" text-anchor="middle">WGC 后台抓取回调线程</text>
+  </g>
+
+  <!-- [11] m_pendingTexture (线程缓冲数据) -->
+  <g transform="translate(740, 340)" filter="url(#shadow)">
+    <rect width="190" height="50" fill="#fef9c3" stroke="#eab308" stroke-width="1.5" stroke-dasharray="4" rx="6" />
+    <text x="95" y="22" font-family="system-ui" font-size="13" font-weight="bold" fill="#854d0e" text-anchor="middle">m_pendingTexture</text>
+    <text x="95" y="38" font-family="system-ui" font-size="10" fill="#ca8a04" text-anchor="middle">互斥锁保护的共享纹理指针</text>
+  </g>
+
+  <!-- [12] StopCapture -->
+  <g transform="translate(500, 460)" filter="url(#shadow)">
+    <rect width="140" height="50" fill="#f3e8ff" stroke="#8b5cf6" stroke-width="1.5" rx="6" />
+    <text x="70" y="22" font-family="system-ui" font-size="13" font-weight="bold" fill="#6d28d9" text-anchor="middle">StopCapture()</text>
+    <text x="70" y="38" font-family="system-ui" font-size="10" fill="#8b5cf6" text-anchor="middle">关闭捕获并注销句柄</text>
+  </g>
+
+  <!-- [13] CleanupImGui -->
+  <g transform="translate(660, 460)" filter="url(#shadow)">
+    <rect width="140" height="50" fill="#ccfbf1" stroke="#0d9488" stroke-width="1.5" rx="6" />
+    <text x="70" y="22" font-family="system-ui" font-size="13" font-weight="bold" fill="#0f766e" text-anchor="middle">CleanupImGui()</text>
+    <text x="70" y="38" font-family="system-ui" font-size="10" fill="#0d9488" text-anchor="middle">销毁 GUI 上下文</text>
+  </g>
+
+  <!-- ==================== 步骤标记序号 (1 - 6) ==================== -->
+  <g transform="translate(0, 0)">
+    <!-- 步骤 1: InitGraphics -->
+    <circle cx="470" cy="180" r="10" fill="#0284c7" />
+    <text x="470" y="180" font-family="system-ui" font-size="10" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="central">1</text>
+    
+    <!-- 步骤 2: InitImGui -->
+    <circle cx="555" cy="185" r="10" fill="#0284c7" />
+    <text x="555" y="185" font-family="system-ui" font-size="10" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="central">2</text>
+    
+    <!-- 步骤 3: StartCapture -->
+    <circle cx="635" cy="185" r="10" fill="#0284c7" />
+    <text x="635" y="185" font-family="system-ui" font-size="10" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="central">3</text>
+    
+    <!-- 步骤 4: RenderFrame (Loop) -->
+    <circle cx="720" cy="180" r="10" fill="#0284c7" />
+    <text x="720" y="180" font-family="system-ui" font-size="10" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="central">4</text>
+
+    <!-- 步骤 5: StopCapture -->
+    <circle cx="600" cy="430" r="10" fill="#475569" />
+    <text x="600" y="430" font-family="system-ui" font-size="10" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="central">5</text>
+
+    <!-- 步骤 6: CleanupImGui -->
+    <circle cx="790" cy="430" r="10" fill="#475569" />
+    <text x="790" y="430" font-family="system-ui" font-size="10" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="central">6</text>
+  </g>
+
+  <!-- ==================== 图例说明 (Legend) ==================== -->
+  <g transform="translate(50, 470)">
+    <text x="0" y="15" font-family="system-ui" font-size="11" font-weight="bold" fill="#475569">颜色图例：</text>
+    
+    <rect x="75" y="3" width="12" height="12" fill="#e0f2fe" stroke="#0284c7" rx="2" />
+    <text x="92" y="13" font-family="system-ui" font-size="10" fill="#475569">控制流/初始化</text>
+
+    <rect x="200" y="3" width="12" height="12" fill="#f1f5f9" stroke="#64748b" rx="2" />
+    <text x="217" y="13" font-family="system-ui" font-size="10" fill="#475569">Win32 系统回调</text>
+
+    <rect x="325" y="3" width="12" height="12" fill="#ccfbf1" stroke="#0d9488" rx="2" />
+    <text x="342" y="13" font-family="system-ui" font-size="10" fill="#475569">D3D11 渲染层</text>
+
+    <rect x="75" y="22" width="12" height="12" fill="#fae8ff" stroke="#d946ef" rx="2" />
+    <text x="92" y="32" font-family="system-ui" font-size="10" fill="#475569">ImGui 界面</text>
+
+    <rect x="200" y="22" width="12" height="12" fill="#f3e8ff" stroke="#8b5cf6" rx="2" />
+    <text x="217" y="32" font-family="system-ui" font-size="10" fill="#475569">WinRT WGC 捕获</text>
+
+    <rect x="325" y="22" width="12" height="12" fill="#fef9c3" stroke="#eab308" stroke-dasharray="2" rx="2" />
+    <text x="342" y="32" font-family="system-ui" font-size="10" fill="#475569">共享状态 (Mutex 保护)</text>
+  </g>
+</svg>

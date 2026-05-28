@@ -128,6 +128,7 @@ private:
                     return 0;
             }
         }
+
         return DefWindowProcA(hwnd, msg, wParam, lParam);
     }
 
@@ -230,7 +231,8 @@ private:
     }
 
     // 后台捕获回调
-    void OnFrameArrived(winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePool const& sender, winrt::Windows::Foundation::IInspectable const&) {
+    void OnFrameArrived(winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePool const& sender, 
+        winrt::Windows::Foundation::IInspectable const&) {
         auto frame = sender.TryGetNextFrame();
         if (!frame) return;
 
@@ -257,8 +259,7 @@ private:
         ImGui::NewFrame();
 
         // 线程安全地在主线程创建和管理 SRV 资源
-        winrt::com_ptr<ID3D11Texture2D> newTexture;
-        {
+        winrt::com_ptr<ID3D11Texture2D> newTexture; {
             std::lock_guard<std::mutex> lock(m_mutex);
             if (m_pendingTexture) {
                 newTexture = m_pendingTexture;
