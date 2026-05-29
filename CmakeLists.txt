@@ -1,17 +1,13 @@
 cmake_minimum_required(VERSION 3.15)
 project(dongzhenmao CXX)
 
-# 设置 C++ 标准
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_compile_options(/utf-8)
 
-list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows")
-
 find_package(imgui CONFIG REQUIRED)
 
-# 声明可执行文件（注意：您的源文件名为 dongzhenmao.cpp，在此处予以对应）
 add_executable(dongzhenmao dongzhenmao.cpp)
 
-target_link_libraries(dongzhenmao PRIVATE imgui::imgui)
+target_link_libraries(dongzhenmao imgui::imgui)

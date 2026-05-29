@@ -31,42 +31,48 @@
 // 声明 ImGui 的 Win32 消息处理函数
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-struct SimpleImGuiWindow {
+class SimpleImGuiWindow {
+public:
     SimpleImGuiWindow() {
+        // 注册 Win32 窗口类
         WNDCLASSEXA wc = { sizeof(WNDCLASSEXA) };
         wc.lpfnWndProc = WndProc;
         wc.hInstance = GetModuleHandle(nullptr);
         wc.lpszClassName = "SimpleImGuiClass";
         RegisterClassExA(&wc);
 
-        m_hwnd = CreateWindowExA(0, "SimpleImGuiClass", "ImGui show",
+        // 创建窗口（标题可自定义）
+        m_hwnd = CreateWindowExA(0, "SimpleImGuiClass", "ImGui 单窗口演示",
             WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 800, 600,
             nullptr, nullptr, wc.hInstance, this);
     }
 
     void Run() {
+        // 初始化图形和 ImGui
         InitGraphics();
         InitImGui();
 
         ShowWindow(m_hwnd, SW_SHOW);
         UpdateWindow(m_hwnd);
 
+        // 主消息循环
         MSG msg;
         ZeroMemory(&msg, sizeof(msg));
         while (msg.message != WM_QUIT) {
             if (PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE)) {
                 TranslateMessage(&msg);
-                DispatchMessageA(&msg);
+                DispatchMessage(&msg);
                 continue;
             }
 
-            RenderFrame(); 
+            RenderFrame();
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
 
         CleanupImGui();
     }
 
+private:
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         // 优先让 ImGui 处理输入事件
         if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam))
@@ -166,15 +172,18 @@ struct SimpleImGuiWindow {
     void RenderFrame() {
         if (!m_rtv) return;
 
+        // 启动 ImGui 帧
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
 
+        // ========== 绘制唯一一个 ImGui 窗口 ==========
         ImGui::Begin("Hello ImGui Window");
         ImGui::Text("Hello, ImGui!");
         ImGui::Text("This is a single window example.");
         ImGui::End();
 
+        // 渲染
         ImGui::Render();
 
         ID3D11RenderTargetView* rtvList[] = { m_rtv.get() };
@@ -188,6 +197,7 @@ struct SimpleImGuiWindow {
         m_swapChain->Present(1, 0);
     }
 
+private:
     HWND m_hwnd = nullptr;
     winrt::com_ptr<ID3D11Device> m_d3dDevice;
     winrt::com_ptr<ID3D11DeviceContext> m_d3dContext;
@@ -195,7 +205,11 @@ struct SimpleImGuiWindow {
     winrt::com_ptr<ID3D11RenderTargetView> m_rtv;
 };
 
+// ==========================================
+// 主入口
+// ==========================================
 int main() {
+    // 必须初始化为 STA
     winrt::init_apartment(winrt::apartment_type::single_threaded);
 
     try {
