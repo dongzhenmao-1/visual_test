@@ -31,82 +31,84 @@
 // 声明 ImGui 的 Win32 消息处理函数
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-struct SimpleImGuiWindow {
-    SimpleImGuiWindow() {
-        WNDCLASSEXA wc = { sizeof(WNDCLASSEXA) };
-        wc.lpfnWndProc = WndProc;
-        wc.hInstance = GetModuleHandle(nullptr);
-        wc.lpszClassName = "SimpleImGuiClass";
-        RegisterClassExA(&wc);
-
-        m_hwnd = CreateWindowExA(0, "SimpleImGuiClass", "ImGui show",
-            WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 800, 600,
-            nullptr, nullptr, wc.hInstance, this);
-    }
-
-    void Run() {
-        InitGraphics();
-        InitImGui();
-
-        ShowWindow(m_hwnd, SW_SHOW);
-        UpdateWindow(m_hwnd);
-
-        MSG msg;
-        ZeroMemory(&msg, sizeof(msg));
-        while (msg.message != WM_QUIT) {
-            if (PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE)) {
-                TranslateMessage(&msg);
-                DispatchMessageA(&msg);
-                continue;
-            }
-
-            RenderFrame(); 
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
-
-        CleanupImGui();
-    }
+struct TestWindow {
+    HWND m_hwnd = nullptr;
+    winrt::com_ptr<ID3D11Device> m_d3dDevice;
+    winrt::com_ptr<ID3D11DeviceContext> m_d3dContext;
+    winrt::com_ptr<IDXGISwapChain1> m_swapChain;
+    winrt::com_ptr<ID3D11RenderTargetView> m_rtv;
 
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-        // 优先让 ImGui 处理输入事件
-        if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam))
-            return true;
+        // if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam)) return true;        
 
-        SimpleImGuiWindow* self = nullptr;
-        if (msg == WM_NCCREATE) {
-            CREATESTRUCTA* pCreate = reinterpret_cast<CREATESTRUCTA*>(lParam);
-            self = reinterpret_cast<SimpleImGuiWindow*>(pCreate->lpCreateParams);
-            SetWindowLongPtr(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
-        } else {
-            self = reinterpret_cast<SimpleImGuiWindow*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
-        }
-
-        if (self) {
-            switch (msg) {
-                case WM_SIZE:
-                    self->OnResize(LOWORD(lParam), HIWORD(lParam));
-                    return 0;
-                case WM_DESTROY:
-                    PostQuitMessage(0);
-                    return 0;
-            }
-        }
+        // SimpleImGuiWindow *self = nullptr;
+        // if (msg == WM_NCCREATE) {
+        //     CREATESTRUCTA *pCreate = reinterpret_cast<CREATESTRUCTA*>(lParam);
+        //     self = reinterpret_cast<SimpleImGuiWindow*>(pCreate->lpCreateParams);
+        //     SetWindowLongPtrA(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
+        // } else {
+        //     self = reinterpret_cast<SimpleImGuiWindow*>(GetWindowLongPtrA(hwnd, GWLP_USERDATA));
+        // }
+        
+        // if (self) {
+        //     if (msg == WM_SIZE) {
+        //         self->OnResize(LOWORD(lParam), HIWORD(lParam));
+        //         return 0;
+        //     } else if (msg == WM_DESTROY) {
+        //         PostQuitMessage(0);
+        //         return 0;
+        //     }
+        // }
 
         return DefWindowProcA(hwnd, msg, wParam, lParam);
+    }
+
+    void OnResize(int w, int h) {
+        if (m_swapChain && w > 0 && h > 0) {
+            m_rtv = nullptr;
+            m_swapChain->ResizeBuffers(2, w, h, DXGI_FORMAT_UNKNOWN, 0);
+            UpdateRenderTarget();
+        }
+    }
+
+    void UpdateRenderTarget() {
+        m_rtv = nullptr;
+        winrt::com_ptr<ID3D11Texture2D> backBuffer;
+        winrt::check_hresult(
+            m_swapChain->GetBuffer(0, winrt::guid_of<ID3D11Texture2D>(), backBuffer.put_void())
+        );
+        winrt::check_hresult(
+            m_d3dDevice->CreateRenderTargetView(backBuffer.get(), nullptr, m_rtv.put())
+        );
+    }
+
+    TestWindow() {
+        WNDCLASSEXA wc = { sizeof(WNDCLASSEXA) };
+        wc.lpfnWndProc = WndProc;
+        wc.hInstance = GetModuleHandleA(nullptr);
+        wc.lpszClassName = "TestWindowClass";
+        RegisterClassExA(&wc);
+
+        m_hwnd = CreateWindowExA(0, "TestWindowClass", "Test show",
+            WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 800, 600,
+            nullptr, nullptr, wc.hInstance, this
+        );
     }
 
     void InitGraphics() {
         winrt::com_ptr<ID3D11Device> d3dDevice;
         winrt::com_ptr<ID3D11DeviceContext> d3dContext;
-        winrt::check_hresult(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
-            D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0, D3D11_SDK_VERSION,
-            d3dDevice.put(), nullptr, d3dContext.put()));
+        winrt::check_hresult(
+            D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
+                D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0, D3D11_SDK_VERSION,
+                d3dDevice.put(), nullptr, d3dContext.put()
+            )
+        );
 
         d3dDevice.as<ID3D10Multithread>()->SetMultithreadProtected(TRUE);
         m_d3dDevice = d3dDevice;
         m_d3dContext = d3dContext;
 
-        // 创建交换链
         winrt::com_ptr<IDXGIAdapter> adapter;
         d3dDevice.as<IDXGIDevice>()->GetAdapter(adapter.put());
         winrt::com_ptr<IDXGIFactory2> dxgiFactory;
@@ -124,58 +126,46 @@ struct SimpleImGuiWindow {
         desc.BufferCount = 2;
         desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
 
-        winrt::check_hresult(dxgiFactory->CreateSwapChainForHwnd(
-            m_d3dDevice.get(), m_hwnd, &desc, nullptr, nullptr, m_swapChain.put()));
+        winrt::check_hresult(
+            dxgiFactory->CreateSwapChainForHwnd(
+                m_d3dDevice.get(), m_hwnd, &desc, nullptr, nullptr, m_swapChain.put()
+            )
+        );
 
         UpdateRenderTarget();
     }
 
-    void UpdateRenderTarget() {
-        m_rtv = nullptr;
-        winrt::com_ptr<ID3D11Texture2D> backBuffer;
-        winrt::check_hresult(m_swapChain->GetBuffer(0, winrt::guid_of<ID3D11Texture2D>(), backBuffer.put_void()));
-        winrt::check_hresult(m_d3dDevice->CreateRenderTargetView(backBuffer.get(), nullptr, m_rtv.put()));
-    }
+    // void InitImGui() {
+    //     IMGUI_CHECKVERSION();
+    //     ImGui::CreateContext();
+    //     ImGuiIO &io = ImGui::GetIO();
+    //     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
-    void OnResize(int w, int h) {
-        if (m_swapChain && w > 0 && h > 0) {
-            m_rtv = nullptr;
-            m_swapChain->ResizeBuffers(2, w, h, DXGI_FORMAT_UNKNOWN, 0);
-            UpdateRenderTarget();
-        }
-    }
+    //     ImGui::StyleColorsDark();
 
-    void InitImGui() {
-        IMGUI_CHECKVERSION();
-        ImGui::CreateContext();
-        ImGuiIO& io = ImGui::GetIO();
-        io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    //     ImGui_ImplWin32_Init(m_hwnd);
+    //     ImGui_ImplDX11_Init(m_d3dDevice.get(), m_d3dContext.get());
+    // }
 
-        ImGui::StyleColorsDark();
-
-        ImGui_ImplWin32_Init(m_hwnd);
-        ImGui_ImplDX11_Init(m_d3dDevice.get(), m_d3dContext.get());
-    }
-
-    void CleanupImGui() {
-        ImGui_ImplDX11_Shutdown();
-        ImGui_ImplWin32_Shutdown();
-        ImGui::DestroyContext();
-    }
+    // void CleanupImGui() {
+    //     ImGui_ImplDX11_Shutdown();
+    //     ImGui_ImplWin32_Shutdown();
+    //     ImGui::DestroyContext();        
+    // }
 
     void RenderFrame() {
         if (!m_rtv) return;
 
-        ImGui_ImplDX11_NewFrame();
-        ImGui_ImplWin32_NewFrame();
-        ImGui::NewFrame();
+        // ImGui_ImplDX11_NewFrame();
+        // ImGui_ImplWin32_NewFrame();
+        // ImGui::NewFrame();
 
-        ImGui::Begin("Hello ImGui Window");
-        ImGui::Text("Hello, ImGui!");
-        ImGui::Text("This is a single window example.");
-        ImGui::End();
+        // ImGui::Begin("Hello ImGui Window");
+        // ImGui::Text("Hello, ImGui!");
+        // ImGui::Text("This is a single window example.");
+        // ImGui::End();
 
-        ImGui::Render();
+        // ImGui::Render();
 
         ID3D11RenderTargetView* rtvList[] = { m_rtv.get() };
         m_d3dContext->OMSetRenderTargets(1, rtvList, nullptr);
@@ -183,23 +173,40 @@ struct SimpleImGuiWindow {
         const float clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
         m_d3dContext->ClearRenderTargetView(m_rtv.get(), clearColor);
 
-        ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+        // ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 
         m_swapChain->Present(1, 0);
     }
 
-    HWND m_hwnd = nullptr;
-    winrt::com_ptr<ID3D11Device> m_d3dDevice;
-    winrt::com_ptr<ID3D11DeviceContext> m_d3dContext;
-    winrt::com_ptr<IDXGISwapChain1> m_swapChain;
-    winrt::com_ptr<ID3D11RenderTargetView> m_rtv;
+    void Run() {
+        InitGraphics();
+        // InitImGui();
+
+        ShowWindow(m_hwnd, SW_SHOW);
+        UpdateWindow(m_hwnd);
+
+        MSG msg;
+        ZeroMemory(&msg, sizeof(msg));
+        while (msg.message != WM_QUIT) {
+            if (PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE)) {
+                TranslateMessage(&msg);
+                DispatchMessageA(&msg);
+                continue;
+            }
+
+            RenderFrame(); 
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        // CleanupImGui();
+    }
 };
 
 int main() {
     winrt::init_apartment(winrt::apartment_type::single_threaded);
 
     try {
-        SimpleImGuiWindow app;
+        TestWindow app;
         app.Run();
     } catch (const std::exception& ex) {
         std::cerr << "异常: " << ex.what() << std::endl;
