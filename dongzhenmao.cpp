@@ -3,32 +3,27 @@
 #include <mutex>
 #include <string>
 #include <algorithm>
-#include <coroutine> // 防止实验性协程断言阻断
+#include <coroutine> 
 
-// C++/WinRT 投影头文件
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.System.h>
 #include <winrt/Windows.Graphics.Capture.h>
 #include <winrt/Windows.Graphics.DirectX.Direct3D11.h>
 
-// COM 互操作与图形头文件
 #include <windows.graphics.capture.interop.h>
 #include <windows.graphics.directx.direct3d11.interop.h>
 #include <d3d11.h>
 #include <dxgi1_2.h>
 
-// Dear ImGui 头文件及后端
 #include <imgui.h>
 #include <imgui_impl_win32.h>
 #include <imgui_impl_dx11.h>
 
-// 自动链接库
 #pragma comment(lib, "windowsapp")
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "user32.lib")
 
-// 声明 ImGui 的 Win32 消息处理函数
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 struct TestWindow {
@@ -39,32 +34,34 @@ struct TestWindow {
     winrt::com_ptr<ID3D11RenderTargetView> m_rtv;
 
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-        // if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam)) return true;        
+        if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam)) return true;        
 
-        // SimpleImGuiWindow *self = nullptr;
-        // if (msg == WM_NCCREATE) {
-        //     CREATESTRUCTA *pCreate = reinterpret_cast<CREATESTRUCTA*>(lParam);
-        //     self = reinterpret_cast<SimpleImGuiWindow*>(pCreate->lpCreateParams);
-        //     SetWindowLongPtrA(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
-        // } else {
-        //     self = reinterpret_cast<SimpleImGuiWindow*>(GetWindowLongPtrA(hwnd, GWLP_USERDATA));
-        // }
+        TestWindow *self = nullptr;
+        if (msg == WM_NCCREATE) {
+            CREATESTRUCTA *pCreate = reinterpret_cast<CREATESTRUCTA*>(lParam);
+            self = reinterpret_cast<TestWindow*>(pCreate->lpCreateParams);
+            SetWindowLongPtrA(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
+        } else {
+            self = reinterpret_cast<TestWindow*>(GetWindowLongPtrA(hwnd, GWLP_USERDATA));
+        }
         
-        // if (self) {
-        //     if (msg == WM_SIZE) {
-        //         self->OnResize(LOWORD(lParam), HIWORD(lParam));
-        //         return 0;
-        //     } else if (msg == WM_DESTROY) {
-        //         PostQuitMessage(0);
-        //         return 0;
-        //     }
-        // }
+        if (self) {
+            if (msg == WM_SIZE) {
+                self->OnResize(LOWORD(lParam), HIWORD(lParam));
+                return 0;
+            } else if (msg == WM_DESTROY) {
+                PostQuitMessage(0);
+                return 0;
+            }
+        }
 
         return DefWindowProcA(hwnd, msg, wParam, lParam);
     }
 
     void OnResize(int w, int h) {
         if (m_swapChain && w > 0 && h > 0) {
+            ID3D11RenderTargetView* nullViews[] = { nullptr };
+            m_d3dContext->OMSetRenderTargets(1, nullViews, nullptr);
             m_rtv = nullptr;
             m_swapChain->ResizeBuffers(2, w, h, DXGI_FORMAT_UNKNOWN, 0);
             UpdateRenderTarget();
@@ -89,10 +86,14 @@ struct TestWindow {
         wc.lpszClassName = "TestWindowClass";
         RegisterClassExA(&wc);
 
-        m_hwnd = CreateWindowExA(0, "TestWindowClass", "Test show",
+        m_hwnd = CreateWindowExA(0, "TestWindowClass", "Test 喵",
             WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 800, 600,
             nullptr, nullptr, wc.hInstance, this
         );
+    }
+    
+    ~TestWindow() {
+        if (m_hwnd) DestroyWindow(m_hwnd);
     }
 
     void InitGraphics() {
@@ -121,10 +122,10 @@ struct TestWindow {
         desc.Width = std::max<LONG>(1, rect.right - rect.left);
         desc.Height = std::max<LONG>(1, rect.bottom - rect.top);
         desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-        desc.SampleDesc.Count = 1;
         desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-        desc.BufferCount = 2;
         desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+        desc.SampleDesc.Count = 1;
+        desc.BufferCount = 2;
 
         winrt::check_hresult(
             dxgiFactory->CreateSwapChainForHwnd(
@@ -135,37 +136,37 @@ struct TestWindow {
         UpdateRenderTarget();
     }
 
-    // void InitImGui() {
-    //     IMGUI_CHECKVERSION();
-    //     ImGui::CreateContext();
-    //     ImGuiIO &io = ImGui::GetIO();
-    //     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    void InitImGui() {
+        IMGUI_CHECKVERSION();
+        ImGui::CreateContext();
+        ImGuiIO &io = ImGui::GetIO();
+        io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
-    //     ImGui::StyleColorsDark();
+        ImGui::StyleColorsDark();
 
-    //     ImGui_ImplWin32_Init(m_hwnd);
-    //     ImGui_ImplDX11_Init(m_d3dDevice.get(), m_d3dContext.get());
-    // }
+        ImGui_ImplWin32_Init(m_hwnd);
+        ImGui_ImplDX11_Init(m_d3dDevice.get(), m_d3dContext.get());
+    }
 
-    // void CleanupImGui() {
-    //     ImGui_ImplDX11_Shutdown();
-    //     ImGui_ImplWin32_Shutdown();
-    //     ImGui::DestroyContext();        
-    // }
+    void CleanupImGui() {
+        ImGui_ImplDX11_Shutdown();
+        ImGui_ImplWin32_Shutdown();
+        ImGui::DestroyContext();        
+    }
 
     void RenderFrame() {
         if (!m_rtv) return;
 
-        // ImGui_ImplDX11_NewFrame();
-        // ImGui_ImplWin32_NewFrame();
-        // ImGui::NewFrame();
+        ImGui_ImplDX11_NewFrame();
+        ImGui_ImplWin32_NewFrame();
+        ImGui::NewFrame();
 
-        // ImGui::Begin("Hello ImGui Window");
-        // ImGui::Text("Hello, ImGui!");
-        // ImGui::Text("This is a single window example.");
-        // ImGui::End();
+        ImGui::Begin("Hello ImGui Window");
+        ImGui::Text("Hello, ImGui!");
+        ImGui::Text("This is a single window example.");
+        ImGui::End();
 
-        // ImGui::Render();
+        ImGui::Render();
 
         ID3D11RenderTargetView* rtvList[] = { m_rtv.get() };
         m_d3dContext->OMSetRenderTargets(1, rtvList, nullptr);
@@ -173,14 +174,14 @@ struct TestWindow {
         const float clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
         m_d3dContext->ClearRenderTargetView(m_rtv.get(), clearColor);
 
-        // ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+        ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 
         m_swapChain->Present(1, 0);
     }
 
     void Run() {
         InitGraphics();
-        // InitImGui();
+        InitImGui();
 
         ShowWindow(m_hwnd, SW_SHOW);
         UpdateWindow(m_hwnd);
@@ -195,10 +196,9 @@ struct TestWindow {
             }
 
             RenderFrame(); 
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
 
-        // CleanupImGui();
+        CleanupImGui();
     }
 };
 

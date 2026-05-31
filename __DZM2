@@ -144,7 +144,9 @@ private:
         m_d3dContext = d3dContext;
 
         winrt::com_ptr<IInspectable> inspectableDevice;
-        winrt::check_hresult(CreateDirect3D11DeviceFromDXGIDevice(d3dDevice.as<IDXGIDevice>().get(), inspectableDevice.put()));
+        winrt::check_hresult(
+            CreateDirect3D11DeviceFromDXGIDevice(d3dDevice.as<IDXGIDevice>().get(), inspectableDevice.put())
+        );
         m_winrtDevice = inspectableDevice.as<winrt::Windows::Graphics::DirectX::Direct3D11::IDirect3DDevice>();
 
         winrt::com_ptr<IDXGIAdapter> adapter;
@@ -204,14 +206,11 @@ private:
 
     void StartCapture() {
         auto factory = winrt::get_activation_factory<winrt::Windows::Graphics::Capture::GraphicsCaptureItem, IGraphicsCaptureItemInterop>();
-        winrt::check_hresult(factory->CreateForWindow(m_targetHwnd, winrt::guid_of<winrt::Windows::Graphics::Capture::GraphicsCaptureItem>(), winrt::put_abi(m_item)));
+        winrt::check_hresult(
+            factory->CreateForWindow(m_targetHwnd, winrt::guid_of<winrt::Windows::Graphics::Capture::GraphicsCaptureItem>(), winrt::put_abi(m_item))
+        );
 
         auto size = m_item.Size();
-        // 边界控制：避免目标窗口尺寸返回 0 导致创建 FramePool 报错或卡死
-        if (size.Width <= 0 || size.Height <= 0) {
-            size.Width = 1024;
-            size.Height = 768;
-        }
 
         m_framePool = winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePool::CreateFreeThreaded(
             m_winrtDevice, winrt::Windows::Graphics::DirectX::DirectXPixelFormat::B8G8R8A8UIntNormalized, 2, size);
@@ -345,9 +344,9 @@ private:
     winrt::com_ptr<ID3D11ShaderResourceView> m_currentSRV;
 
     // 捕获相关资源
-    winrt::Windows::Graphics::Capture::GraphicsCaptureItem m_item{ nullptr };
-    winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePool m_framePool{ nullptr };
-    winrt::Windows::Graphics::Capture::GraphicsCaptureSession m_session{ nullptr };
+    winrt::Windows::Graphics::Capture::GraphicsCaptureItem m_item{ nullptr }; // 代表了要捕获的对象
+    winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePool m_framePool{ nullptr }; // 帧池
+    winrt::Windows::Graphics::Capture::GraphicsCaptureSession m_session{ nullptr }; // 管理器
     winrt::event_token m_frameArrivedToken;
 };
 

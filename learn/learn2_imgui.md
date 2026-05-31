@@ -1,3 +1,92 @@
+接下来我们尝试接入 ImGui，这是一个图形库，安装好后，我们先写两个基础函数（这里没有的问为什么，基本只有这一种写法）。
+
+```cpp
+void InitImGui() {
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO &io = ImGui::GetIO(); // 与外界交互的钥匙
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // 启用键盘交互
+
+    ImGui::StyleColorsDark();
+    ImGui_ImplWin32_Init(m_hwnd);                               // 绑定
+    ImGui_ImplDX11_Init(m_d3dDevice.get(), m_d3dContext.get()); // 绑定
+}
+
+void CleanupImGui() {
+    ImGui_ImplDX11_Shutdown();
+    ImGui_ImplWin32_Shutdown();
+    ImGui::DestroyContext(); // 字面义
+}
+```
+
+开启了 ImGui 后，有些信息可能会被 ImGui 处理，所以在 `WndProc` 最前面加上：
+```cpp
+static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam)) return true;        
+    // ...
+}
+```
+
+将初始化和清理添加到 `Run` 中：
+
+```cpp
+void Run() {
+    InitGraphics();
+    InitImGui();
+
+    ShowWindow(m_hwnd, SW_SHOW);
+    UpdateWindow(m_hwnd);
+
+    MSG msg;
+    ZeroMemory(&msg, sizeof(msg));
+    while (msg.message != WM_QUIT) {
+        if (PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE)) {
+            TranslateMessage(&msg);
+            DispatchMessageA(&msg);
+            continue;
+        }
+
+        RenderFrame(); 
+    }    
+
+    CleanupImGui();
+}
+```
+
+在 `RenderFrame` 中进行一个小测试，标星号的代表你们写代码可以直接这么写，只用替换掉中间的。
+
+```cpp
+void RenderFrame() {
+    if (!m_rtv) return;
+
+    ImGui_ImplDX11_NewFrame();    // *
+    ImGui_ImplWin32_NewFrame();   // *
+    ImGui::NewFrame();            // *
+
+    ImGui::Begin("Hello ImGui Window");
+    ImGui::Text("Hello, ImGui!");
+    ImGui::Text("This is a single window example.");
+    ImGui::End();
+
+    ImGui::Render();              // * 绘入缓存
+
+    ID3D11RenderTargetView* rtvList[] = { m_rtv.get() };
+    m_d3dContext->OMSetRenderTargets(1, rtvList, nullptr);
+
+    const float clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+    m_d3dContext->ClearRenderTargetView(m_rtv.get(), clearColor); 
+    // 到这里有人会疑惑了为什么要清屏与为什么不用 ImGui
+    // 因为 ImGui 的宗旨只是话 UI 控件而不是整个窗口
+
+    ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData()); // * 将缓存绘入屏幕
+
+    m_swapChain->Present(1, 0);
+}
+```
+
+总览：
+
+```cpp
 #include <iostream>
 #include <thread>
 #include <mutex>
@@ -214,3 +303,4 @@ int main() {
 
     return 0;
 }
+```
