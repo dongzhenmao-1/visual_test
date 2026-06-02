@@ -69,22 +69,117 @@ void StopCapture() {
 
 开始了就要开始获取帧了：
 
-这里先讲一个东西，我基本所有以 `ON` 开头的函数的含义都是当...时，比如下面这个，就代表 `当 FrameArrived 时应当做的是`
+这里先讲一个东西，我基本所有以 `On` 开头的函数的含义都是当...时，比如下面这个，就代表 `当 FrameArrived 这个事件发生时时应当做的是...`
 
 ```cpp
 void OnFrameArrived(winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePool const& sender, 
     winrt::Windows::Foundation::IInspectable const&) {
     auto frame = sender.TryGetNextFrame();
-    if (!frame) return;
+    if (!frame) return; // 
 
     // 从捕获帧提取 D3D11 纹理
     auto access = frame.Surface().as<Windows::Graphics::DirectX::Direct3D11::IDirect3DDxgiInterfaceAccess>();
-    winrt::com_ptr<ID3D11Texture2D> frameTexture;
+    // access 是一个互操作接口对象，她用于在 WinRT 的图形表面和原生 DirectX（DXGI）之间打通桥梁，让你能从 WinRT 类型里取出底层的 COM 纹理指针。
+    winrt::com_ptr<ID3D11Texture2D> frameTexture; // 呐就是这个纹理
     winrt::check_hresult(access->GetInterface(winrt::guid_of<ID3D11Texture2D>(), frameTexture.put_void()));
 
-    std::lock_guard<std::mutex> lock(m_mutex);
-    m_pendingTexture = frameTexture;
+    std::lock_guard<std::mutex> lock(m_mutex); // 这个东西下面讲
+    m_pendingTexture = frameTexture; // 我得到了~ 待渲染的的下一帧
 }
+
+```
+
+相信大家对 `std::mutex` 都不熟悉，简而言之，同一时间，只有一个拿到这个锁的人能使用，比方：
+
+```cpp
+fucA {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    A;
+}
+
+fucB {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    B;
+}
+
+```
+比方说先执行的是 `fucA`，`std::lock_guard` 会上锁，也就是说，除非等待其析构（在这里指的是 `fucA` 执行完），否则 B 的 `std::lock_guard<std::mutex> lock(m_mutex);` 无法向下执行。
+
+OK 我们进行主进程渲染的东西。
+
+```cpp
+void RenderFrame() {
+    if (!m_rtv) return;
+
+    ImGui_ImplDX11_NewFrame();
+    ImGui_ImplWin32_NewFrame();
+    ImGui::NewFrame();
+
+    winrt::com_ptr<ID3D11Texture2D> newTexture; { // 注意这里有个括号限定 std::lock_guard<std::mutex> lock(m_mutex); 作用域（什么时候解析）
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_pendingTexture) {
+            newTexture = m_pendingTexture;
+            m_pendingTexture = nullptr;
+        }
+    }
+
+    if (newTexture) { // 
+        m_currentSRV = nullptr; // 释放旧帧
+        winrt::check_hresult(
+            m_d3dDevice->CreateShaderResourceView(newTexture.get(), nullptr, m_currentSRV.put())
+        );
+    }
+
+    winrt::com_ptr<ID3D11ShaderResourceView> srv = m_currentSRV;
+
+    ImGui::SetNextWindowPos(ImVec2(0, 0)); // 含义为字面义
+    ImGuiIO &io = ImGui::GetIO();
+    ImGui::SetNextWindowSize(io.DisplaySize);
+    ImGui::Begin("PreviewWindow", nullptr, 
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | 
+        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | 
+        ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoBackground);
+
+    if (srv) { // 如果有
+        ImVec2 avail_size = ImGui::GetContentRegionAvail();
+
+        winrt::com_ptr<ID3D11Resource> resource;
+        srv->GetResource(resource.put());
+        winrt::com_ptr<ID3D11Texture2D> texture = resource.as<ID3D11Texture2D>();
+        D3D11_TEXTURE2D_DESC desc;
+        texture->GetDesc(&desc);
+
+        float texW = static_cast<float>(desc.Width);
+        float texH = static_cast<float>(desc.Height);
+
+        float scale = (std::min)(avail_size.x / texW, avail_size.y / texH);
+        ImVec2 drawSize(texW * scale, texH * scale);
+
+        ImVec2 cursorPos((avail_size.x - drawSize.x) * 0.5f, (avail_size.y - drawSize.y) * 0.5f);
+        ImGui::SetCursorPos(cursorPos);
+
+        ImGui::Image(reinterpret_cast<ImTextureID>(srv.get()), drawSize);
+    } else {
+        ImGui::Text("等待捕获图像流入...");
+    }
+
+    ImGui::End();
+
+    ImGui::Render();
+
+    ID3D11RenderTargetView* rtvList[] = { m_rtv.get() };
+    m_d3dContext->OMSetRenderTargets(1, rtvList, nullptr);
+
+    const float clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+    m_d3dContext->ClearRenderTargetView(m_rtv.get(), clearColor);
+
+    ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+
+    m_swapChain->Present(1, 0);
+}
+
+
+
 
 ```
 

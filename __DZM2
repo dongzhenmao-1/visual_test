@@ -269,7 +269,9 @@ private:
         // 仅在获取到新纹理时，于主线程（渲染线程）安全重建 SRV，消除多线程底层冲突
         if (newTexture) {
             m_currentSRV = nullptr; // 释放旧帧
-            winrt::check_hresult(m_d3dDevice->CreateShaderResourceView(newTexture.get(), nullptr, m_currentSRV.put()));
+            winrt::check_hresult(
+                m_d3dDevice->CreateShaderResourceView(newTexture.get(), nullptr, m_currentSRV.put())
+            );
         }
 
         winrt::com_ptr<ID3D11ShaderResourceView> srv = m_currentSRV;
