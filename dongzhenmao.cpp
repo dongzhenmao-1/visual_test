@@ -230,7 +230,7 @@ private:
     }
 
     // 后台捕获回调
-void OnFrameArrived(winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePool const& sender, 
+    void OnFrameArrived(winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePool const& sender, 
         winrt::Windows::Foundation::IInspectable const&) {
         auto frame = sender.TryGetNextFrame();
         if (!frame) return;
@@ -251,23 +251,19 @@ void OnFrameArrived(winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePoo
     }
 
     // 主线程渲染
-     void RenderFrame() {
+    void RenderFrame() {
         if (!m_rtv) return;
 
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
 
-        winrt::com_ptr<ID3D11Texture2D> newTexture; 
-        int updateWidth = 0, updateHeight = 0;
-        {
+        winrt::com_ptr<ID3D11Texture2D> newTexture; {
             std::lock_guard<std::mutex> lock(m_mutex);
             if (m_pendingTexture) {
                 newTexture = m_pendingTexture;
                 m_pendingTexture = nullptr;
                 // 🎯 提取真实尺寸
-                updateWidth = m_pendingWidth;
-                updateHeight = m_pendingHeight;
             }
         }
 
@@ -277,8 +273,8 @@ void OnFrameArrived(winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePoo
                 m_d3dDevice->CreateShaderResourceView(newTexture.get(), nullptr, m_currentSRV.put())
             );
             // 🎯 更新当前渲染的真实尺寸
-            m_currentWidth = updateWidth;
-            m_currentHeight = updateHeight;
+            m_currentWidth = m_pendingWidth;
+            m_currentHeight = m_pendingHeight;
         }
 
         winrt::com_ptr<ID3D11ShaderResourceView> srv = m_currentSRV;
@@ -309,7 +305,6 @@ void OnFrameArrived(winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePoo
             float texW = static_cast<float>(desc.Width);
             float texH = static_cast<float>(desc.Height);
 
-            // 🎯 画面真正有效的内容尺寸
             float validW = static_cast<float>(m_currentWidth);
             float validH = static_cast<float>(m_currentHeight);
 
@@ -321,7 +316,6 @@ void OnFrameArrived(winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePoo
                              std::round((avail_size.y - drawSize.y) * 0.5f));
             ImGui::SetCursorPos(cursorPos);
 
-            // 🎯 核心魔法：只取有效画面！通过计算 UV 坐标将右侧和底部的冗余黑带“物理切除”
             ImVec2 uv0(0.0f, 0.0f); 
             ImVec2 uv1(validW / texW, validH / texH);
 

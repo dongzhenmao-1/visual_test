@@ -235,48 +235,55 @@ private:
         auto frame = sender.TryGetNextFrame();
         if (!frame) return;
 
+        // 🎯 获取此帧真正有效的画面尺寸
+        auto contentSize = frame.ContentSize();
+
         // 从捕获帧提取 D3D11 纹理
         auto access = frame.Surface().as<Windows::Graphics::DirectX::Direct3D11::IDirect3DDxgiInterfaceAccess>();
         winrt::com_ptr<ID3D11Texture2D> frameTexture;
         winrt::check_hresult(access->GetInterface(winrt::guid_of<ID3D11Texture2D>(), frameTexture.put_void()));
 
-        // ==========================================
-        // 关键调整：在此处不再调用 CreateShaderResourceView。
-        // 我们只在多线程下传递纹理，把 SRV 转换工作彻底移交给主线程执行。
-        // ==========================================
         std::lock_guard<std::mutex> lock(m_mutex);
         m_pendingTexture = frameTexture;
+        // 🎯 把真实的宽高存下来
+        m_pendingWidth = contentSize.Width;
+        m_pendingHeight = contentSize.Height;
     }
 
     // 主线程渲染
-    void RenderFrame() {
+     void RenderFrame() {
         if (!m_rtv) return;
 
-        // 启动 ImGui 渲染帧
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
 
-        // 线程安全地在主线程创建和管理 SRV 资源
-        winrt::com_ptr<ID3D11Texture2D> newTexture; {
+        winrt::com_ptr<ID3D11Texture2D> newTexture; 
+        int updateWidth = 0, updateHeight = 0;
+        {
             std::lock_guard<std::mutex> lock(m_mutex);
             if (m_pendingTexture) {
                 newTexture = m_pendingTexture;
                 m_pendingTexture = nullptr;
+                // 🎯 提取真实尺寸
+                updateWidth = m_pendingWidth;
+                updateHeight = m_pendingHeight;
             }
         }
 
-        // 仅在获取到新纹理时，于主线程（渲染线程）安全重建 SRV，消除多线程底层冲突
         if (newTexture) {
-            m_currentSRV = nullptr; // 释放旧帧
+            m_currentSRV = nullptr; 
             winrt::check_hresult(
                 m_d3dDevice->CreateShaderResourceView(newTexture.get(), nullptr, m_currentSRV.put())
             );
+            // 🎯 更新当前渲染的真实尺寸
+            m_currentWidth = updateWidth;
+            m_currentHeight = updateHeight;
         }
 
         winrt::com_ptr<ID3D11ShaderResourceView> srv = m_currentSRV;
 
-        // 创建无边框、贴合整个窗口的 ImGui 窗口
+        // 消除默认边距
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
         ImGui::SetNextWindowPos(ImVec2(0, 0));
@@ -289,10 +296,10 @@ private:
             ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings);
         ImGui::PopStyleVar(2);
 
-        if (srv) {
+        if (srv && m_currentWidth > 0 && m_currentHeight > 0) {
             ImVec2 avail_size = ImGui::GetContentRegionAvail();
 
-            // 解析获取捕获画面的原始宽高度
+            // 解析纹理的实际物理尺寸 (包含右侧/底部的垃圾对齐像素)
             winrt::com_ptr<ID3D11Resource> resource;
             srv->GetResource(resource.put());
             winrt::com_ptr<ID3D11Texture2D> texture = resource.as<ID3D11Texture2D>();
@@ -302,34 +309,37 @@ private:
             float texW = static_cast<float>(desc.Width);
             float texH = static_cast<float>(desc.Height);
 
-            // 等比例缩放逻辑
-            float scale = (std::min)(avail_size.x / texW, avail_size.y / texH);
-            ImVec2 drawSize(texW * scale, texH * scale);
+            // 🎯 画面真正有效的内容尺寸
+            float validW = static_cast<float>(m_currentWidth);
+            float validH = static_cast<float>(m_currentHeight);
 
-            // 居中计算
-            ImVec2 cursorPos((avail_size.x - drawSize.x) * 0.5f, (avail_size.y - drawSize.y) * 0.5f);
+            // 基于真实有效尺寸进行缩放，防止变形
+            float scale = (std::min)(avail_size.x / validW, avail_size.y / validH);
+            ImVec2 drawSize(std::round(validW * scale), std::round(validH * scale));
+
+            ImVec2 cursorPos(std::round((avail_size.x - drawSize.x) * 0.5f), 
+                             std::round((avail_size.y - drawSize.y) * 0.5f));
             ImGui::SetCursorPos(cursorPos);
 
-            // 渲染抓取到的帧画面
-            ImGui::Image(reinterpret_cast<ImTextureID>(srv.get()), drawSize);
+            // 🎯 核心魔法：只取有效画面！通过计算 UV 坐标将右侧和底部的冗余黑带“物理切除”
+            ImVec2 uv0(0.0f, 0.0f); 
+            ImVec2 uv1(validW / texW, validH / texH);
+
+            ImGui::Image(reinterpret_cast<ImTextureID>(srv.get()), drawSize, uv0, uv1);
         } else {
+            ImGui::SetCursorPos(ImVec2(10, 10));
             ImGui::Text("等待捕获图像流入...");
         }
 
         ImGui::End();
 
-        // 后台呈现与渲染提交
+        // 提交渲染
         ImGui::Render();
-        
         ID3D11RenderTargetView* rtvList[] = { m_rtv.get() };
         m_d3dContext->OMSetRenderTargets(1, rtvList, nullptr);
-
         const float clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
         m_d3dContext->ClearRenderTargetView(m_rtv.get(), clearColor);
-
         ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-
-        // 垂直同步呈现
         m_swapChain->Present(1, 0);
     }
 
@@ -354,6 +364,11 @@ private:
     winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePool m_framePool{ nullptr }; // 帧池
     winrt::Windows::Graphics::Capture::GraphicsCaptureSession m_session{ nullptr }; // 管理器
     winrt::event_token m_frameArrivedToken;
+
+    int m_pendingWidth = 0;
+    int m_pendingHeight = 0;
+    int m_currentWidth = 0;
+    int m_currentHeight = 0;
 };
 
 // ==========================================

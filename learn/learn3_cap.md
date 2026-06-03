@@ -81,7 +81,9 @@ void OnFrameArrived(winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePoo
     auto access = frame.Surface().as<Windows::Graphics::DirectX::Direct3D11::IDirect3DDxgiInterfaceAccess>();
     // access 是一个互操作接口对象，她用于在 WinRT 的图形表面和原生 DirectX（DXGI）之间打通桥梁，让你能从 WinRT 类型里取出底层的 COM 纹理指针。
     winrt::com_ptr<ID3D11Texture2D> frameTexture; // 呐就是这个纹理
-    winrt::check_hresult(access->GetInterface(winrt::guid_of<ID3D11Texture2D>(), frameTexture.put_void()));
+    winrt::check_hresult(
+        access->GetInterface(winrt::guid_of<ID3D11Texture2D>(), frameTexture.put_void())
+    );
 
     std::lock_guard<std::mutex> lock(m_mutex); // 这个东西下面讲
     m_pendingTexture = frameTexture; // 我得到了~ 待渲染的的下一帧
@@ -103,7 +105,7 @@ fucB {
 }
 
 ```
-比方说先执行的是 `fucA`，`std::lock_guard` 会上锁，也就是说，除非等待其析构（在这里指的是 `fucA` 执行完），否则 B 的 `std::lock_guard<std::mutex> lock(m_mutex);` 无法向下执行。
+比方说先执行的是 `fucA`，`std::lock_guard` 会上锁，也就是说，除非等待其析构（在这里指的是 `fucA` 执行完），否则 `fucB` 的 `std::lock_guard<std::mutex> lock(m_mutex);` 无法向下执行。
 
 OK 我们进行主进程渲染的东西。
 
@@ -132,13 +134,17 @@ void RenderFrame() {
 
     winrt::com_ptr<ID3D11ShaderResourceView> srv = m_currentSRV;
 
-    ImGui::SetNextWindowPos(ImVec2(0, 0)); // 含义为字面义
-    ImGuiIO &io = ImGui::GetIO();
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f)); // 这里进行了一些修改
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGuiIO& io = ImGui::GetIO();
     ImGui::SetNextWindowSize(io.DisplaySize);
     ImGui::Begin("PreviewWindow", nullptr, 
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | 
         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | 
-        ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoBackground);
+        ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoBackground |
+        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings); // 这里的样式直接拿去用就好了，如果有别的需求请询问 AI（当然这大概是不太可能的）。
+    ImGui::PopStyleVar(2); // 关闭样式
 
     if (srv) { // 如果有
         ImVec2 avail_size = ImGui::GetContentRegionAvail();
@@ -160,7 +166,7 @@ void RenderFrame() {
 
         ImGui::Image(reinterpret_cast<ImTextureID>(srv.get()), drawSize);
     } else {
-        ImGui::Text("等待捕获图像流入...");
+        ImGui::Text("waiting...");
     }
 
     ImGui::End();
@@ -178,8 +184,76 @@ void RenderFrame() {
     m_swapChain->Present(1, 0);
 }
 
-
-
-
 ```
 
+这里的设计为：`m_pendingTexture` 接受最新的一帧（如果有），`m_currentSRV` 则是当前的。避免了反复构建带来的性能消耗，只有在 `m_pendingTexture` 改变的时候才用她来重建 `m_currentSRV`。同时，我们应当避免锁内耗时操作，`newTexture` 作为中间变量就是防止这个问题，你要知道 `CreateShaderResourceView` 是非常慢的。 
+
+不出意外，你会看到一个右边，下边都有很大黑带的 vscode 窗口了。
+
+怎么解决这个问题呢，经过查阅 ...
+
+这期神了：*在 Windows 屏幕捕获 API 中，捕获到的 ID3D11Texture2D 纹理大小（比如 1032x780）往往比窗口的实际尺寸要大。这是因为 GPU 为了提升内存读取效率，会强制把纹理的宽高对齐到特定的倍数（例如 16 或 32 的倍数）。*
+
+怎么办呢，我们直接记录一下就好啦：
+
+添加成员变量（如同 `m_pendingTexture` 与 `m_currentSRV` 为一对一样）：
+```cpp
+int m_pendingWidth = 0;
+int m_pendingHeight = 0;
+int m_currentWidth = 0;
+int m_currentHeight = 0;
+```
+
+在 `OnFrameArrived` 中：
+
+```cpp
+auto contentSize = frame.ContentSize(); // 获取此帧真正有效的画面尺寸
+// 锁后：
+m_pendingWidth = contentSize.Width;
+m_pendingHeight = contentSize.Height;
+```
+
+在 `RenderFrame` 中（`int` 的复制很快，原先的 `newTexture` 方法就没必要了）：
+
+```cpp
+winrt::com_ptr<ID3D11Texture2D> newTexture; 
+int updateWidth = 0, updateHeight = 0; {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_pendingTexture) {
+        newTexture = m_pendingTexture;
+        m_pendingTexture = nullptr;
+    }
+}
+
+if (newTexture) {
+    m_currentSRV = nullptr; 
+    winrt::check_hresult(
+        m_d3dDevice->CreateShaderResourceView(newTexture.get(), nullptr, m_currentSRV.put())
+    );
+    // 更新当前渲染的真实尺寸
+    m_currentWidth = m_pendingWidth;
+    m_currentHeight = m_pendingHeight;
+}
+```
+
+最重要的，我们对 `if` 内的逻辑进行修改：
+
+```cpp
+float validW = static_cast<float>(m_currentWidth);
+float validH = static_cast<float>(m_currentHeight);
+
+// 基于真实有效尺寸进行缩放，防止变形
+float scale = (std::min)(avail_size.x / validW, avail_size.y / validH);
+ImVec2 drawSize(std::round(validW * scale), std::round(validH * scale));
+
+ImVec2 cursorPos(std::round((avail_size.x - drawSize.x) * 0.5f), 
+                    std::round((avail_size.y - drawSize.y) * 0.5f));
+ImGui::SetCursorPos(cursorPos);
+
+// 通过计算 UV 坐标将右侧和底部的冗余黑带“物理切除”
+ImVec2 uv0(0.0f, 0.0f); 
+ImVec2 uv1(validW / texW, validH / texH);
+
+ImGui::Image(reinterpret_cast<ImTextureID>(srv.get()), drawSize, uv0, uv1);
+
+```
