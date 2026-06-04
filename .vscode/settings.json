@@ -1,5 +1,18 @@
 {
     "cmake.configureSettings": {
         "CMAKE_TOOLCHAIN_FILE": "C:/Program Files (x86)/Microsoft Visual Studio/18/BuildTools/VC/vcpkg/scripts/buildsystems/vcpkg.cmake"
+    },
+    "terminal.integrated.profiles.windows": {
+    "MSVC x64 Developer Command Prompt": {
+        "path": [
+            "${env:windir}\\System32\\cmd.exe"
+        ],
+        "args": [
+            "/k",
+            "C:\\Program Files (x86)\\Microsoft Visual Studio\\18\\BuildTools\\VC\\Auxiliary\\Build\\vcvars64.bat"
+        ],
+        "overrideName": true
     }
+    },
+    "terminal.integrated.defaultProfile.windows": "MSVC x64 Developer Command Prompt",
 }
