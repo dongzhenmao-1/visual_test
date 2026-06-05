@@ -8,12 +8,6 @@
         "win32-binding",
         "dx11-binding"
       ]
-    },
-    {
-      "name": "onnxruntime"
-    },
-    {
-      "name": "opencv4"
     }
   ]
 }
